@@ -7,6 +7,7 @@
 
 #include <utility>  // make_pair
 #include <memory>   // share_ptr
+#include <cctype>   // isspace
 #include <exception>
 
 #define MUDI_NS_BEGIN namespace mundi {
@@ -30,7 +31,7 @@ MUDI_N_NS_END
 
 // exception
 
-MUDI_NS_BEGIN
+MUDI_N_NS_BEGIN
 
 class not_supported: public std::exception
 {
@@ -50,7 +51,25 @@ public:
   }
 };
 
-MUDI_NS_END
+class premature_eof: public std::exception
+{
+public:
+  const char* what() const noexcept override
+  {
+    return "Input end prematurely";
+  }
+};
+
+class unknown_input: public std::exception
+{
+public:
+  const char* what() const noexcept override
+  {
+    return "Unknown input";
+  }
+};
+
+MUDI_N_NS_END
 
 // interface
 
@@ -128,8 +147,17 @@ protected:
   }
 };
 
-std::unique_ptr<json_value> parse_string(const std::string& str);
-std::unique_ptr<json_value> parse_cstring(const char* cstr, unsigned int len);
+std::unique_ptr<json_value> parse_string(const std::string& str)
+{
+  json_parser p{ str };
+  return p.parse();
+}
+
+std::unique_ptr<json_value> parse_cstring(const char* cstr, unsigned int len)
+{
+  json_parser p{cstr, len}
+  return p.parse();
+}
 
 MUDI_NS_END
 
@@ -454,6 +482,118 @@ private:
   unsigned int len;
   buffer_ptr buffer;
 };
+
+MUDI_N_NS_END
+
+// parser
+
+MUDI_N_NS_BEGIN
+
+void Ensures(bool pred)
+{
+  assert(pred);
+}
+
+class json_parser
+{
+public:
+  json_parser(const std::string& input): cursor{ 0 }
+  {
+    buffer = make_shared(input);
+    end = input.length();
+  }
+
+  json_parser(const char* input, unsigned int len): cursor{ 0 }, end{ len }
+  {
+    buffer = make_shared(input, len);
+  }
+
+  json_parser(const json_parser&) = delete;
+  json_parser& operator=(const json_parser&) = delete;
+
+  std::unique_ptr<json_value> parse()
+  {
+
+  }
+
+private:
+  value_type get_next_value_type()
+  {
+    for(;;) {
+      char c = peek_or_throw();
+      if (isspace(c) || c == ':' || c == ',') {
+        continue;
+      } else if (c == '{') {
+        return value_type::object;
+      } else if (c == '[') {
+        return value_type::array;
+      } else if (c == '\"') {
+        return value_type::string;
+      } else if (isdigit(c)) {
+        return value_type::number;
+      } else if (c == '-') {
+        char next = peek_or_throw(2);
+        if (isdigit(next)) {
+          return value_type::number;
+        } else {
+          throw unknown_input();
+        }
+      }
+    }
+  }
+
+  char peek_or_throw(unsigned int delta = 1)
+  {
+    if (cursor + delta < end) {
+      return buffer->at(cursor);
+    }
+    throw premature_eof();
+  }
+
+  char get_next_or_throw()
+  {
+    char ret = peek_or_throw();
+    cursor += 1;
+    return ret;
+  }
+
+  json_number parse_number();
+  json_string parse_string();
+
+private:
+  unsigned int cursor;
+  unsigned int end;
+  buffer_ptr buffer;
+};
+
+json_number json_parser::parse_number()
+{
+
+}
+
+json_string json_parser::pase_string()
+{
+  Ensures(buffer->at(cursor) == "\"");   // precondition
+
+  cursor += 1;
+  unsigned int begin = cursor;
+
+  for (unsigned int i = cursor; i < end; ++i) {
+    char c = buffer->at(i);
+    if (c == "\\") {
+      char next = get_next_or_throw();
+      if (next == "\"") {
+        continue;
+      }
+    }
+
+    if (c == "\"") {
+      break;
+    }
+  }
+
+  Ensures(buffer->at(cursor - 1) == "\"");  // postcondition
+}
 
 MUDI_N_NS_END
 
