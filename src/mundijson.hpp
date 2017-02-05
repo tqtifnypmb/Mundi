@@ -4,69 +4,18 @@
 #include <unordered_map>
 #include <vector>
 #include <string>
-#include <utility>  // make_pair
 
-#include <memory>
+#include <utility>  // make_pair
+#include <memory>   // share_ptr
 #include <exception>
 
-#define MUDI_NS_BEGIN namespace mudi {
+#define MUDI_NS_BEGIN namespace mundi {
 #define MUDI_NS_END   }
 
-#define MUDI_N_NS_BEGIN namespace mudi { namespace detail {
+#define MUDI_N_NS_BEGIN namespace mundi { namespace {
 #define MUDI_N_NS_END   }}
 
-// base value
-
 MUDI_N_NS_BEGIN
-
-class json_base_value: public json_value
-{
-public:
-  json_base_value(unsigned int pos, unsigned int len, buffer_ptr buf): pos{ pos }, len{ len }, buffer{ buf }
-  {}
-
-  json_base_value(const json_string& rhs): pos{ rhs.pos }, len{ rhs.len }, buffer{ rhs.buffer }
-  {}
-
-  json_base_value& operator=(const json_string& rhs)
-  {
-    if (&rhs == this) {
-      return *this;
-    }
-
-    auto tmp = rhs;
-    std::swap(*this, tmp);
-    return *this;
-  }
-
-  json_base_value(json_string&& rhs): pos{ rhs.pos }, len{ rhs.len }
-  {
-    buffer = std::move(rhs.buffer);
-  }
-
-  json_base_value& operator=(json_string&& rhs)
-  {
-    pos = rhs.pos;
-    len = rhs.len;
-    buffer = std::move(rhs.buffer);
-  }
-
-protected:
-  unsigned int pos;
-  unsigned int len;
-  buffer_ptr buffer;
-}
-
-MUDI_N_NS_END
-
-// string
-
-MUDI_N_NS_BEGIN
-
-class json_value;
-
-typedef std::shared_ptr<std::string> buffer_ptr;
-
 enum class value_type
 {
   array,
@@ -76,6 +25,119 @@ enum class value_type
   boolean,
   null,
 };
+
+MUDI_N_NS_END
+
+// exception
+
+MUDI_NS_BEGIN
+
+class not_supported: public std::exception
+{
+public:
+  const char* what() const noexcept override
+  {
+    return "Not supported operation";
+  }
+};
+
+class key_not_found: public std::exception
+{
+public:
+  const char* what() const noexcept override
+  {
+    return "Key not found";
+  }
+};
+
+MUDI_NS_END
+
+// interface
+
+MUDI_NS_BEGIN
+
+class json_value
+{
+public:
+  virtual ~json_value() noexcept;
+
+  virtual const json_value& operator[](const std::string& key) const
+  {
+    throw not_supported();
+  }
+
+  virtual const json_value& operator[](unsigned int index) const
+  {
+    throw not_supported();
+  }
+
+  virtual bool boolean_value() const noexcept
+  {
+    return false;
+  }
+
+  virtual std::string string_value() const noexcept
+  {
+    return "null";
+  }
+
+  virtual int int_value() const noexcept
+  {
+    return 0;
+  }
+
+  virtual double double_value() const noexcept
+  {
+    return 0;
+  }
+
+  bool is_bool() const noexcept
+  {
+    return type() == value_type::boolean;
+  }
+
+  bool is_array() const noexcept
+  {
+    return type() == value_type::array;
+  }
+
+  bool is_string() const noexcept
+  {
+    return type() == value_type::string;
+  }
+
+  bool is_number() const noexcept
+  {
+    return type() == value_type::number;
+  }
+
+  bool is_object() const noexcept
+  {
+    return type() == value_type::object;
+  }
+
+  bool is_null() const noexcept
+  {
+    return type() == value_type::null;
+  }
+
+protected:
+  virtual value_type type() const noexcept
+  {
+    return value_type::null;
+  }
+};
+
+std::unique_ptr<json_value> parse_string(const std::string& str);
+std::unique_ptr<json_value> parse_cstring(const char* cstr, unsigned int len);
+
+MUDI_NS_END
+
+// string
+
+MUDI_N_NS_BEGIN
+
+typedef std::shared_ptr<std::string> buffer_ptr;
 
 class json_string: public json_value
 {
@@ -107,15 +169,17 @@ public:
     pos = rhs.pos;
     len = rhs.len;
     buffer = std::move(rhs.buffer);
+
+    return *this;
   }
 
-  std::string string_value() noexcept const override
+  std::string string_value() const noexcept override
   {
-      return buffer.substr(pos, len);
+    return buffer->substr(pos, len);
   }
 
 protected:
-  value_type type() noexcept const override
+  value_type type() const noexcept override
   {
     return value_type::string;
   }
@@ -162,25 +226,33 @@ public:
     return *this;
   }
 
-  json_value& operator[](unsigned int index) const override
+  ~json_array()
   {
-    return data.at(index);
+    for (auto& v : data) {
+      delete v;
+    }
+    data.clear();
+  }
+
+  const json_value& operator[](unsigned int index) const override
+  {
+    return *data.at(index);
   }
 
 protected:
-  value_type type() noexcept const override
+  value_type type() const noexcept override
   {
     return value_type::array;
   }
 
 private:
-  void append(json_value val) noexcept
+  void append(json_value* val) noexcept
   {
     data.push_back(val);
   }
 
 private:
-  std::vector<json_value> data;
+  std::vector<json_value*> data;
 };
 
 MUDI_N_NS_END
@@ -214,17 +286,25 @@ public:
     return *this;
   }
 
-  json_value& operator[](const std::string& key) noexcept const override
+  const json_value& operator[](const std::string& key) const override
   {
     auto found = data.find(key);
-    if (found == data.end()) {
-      return json_null{};
+    if (found == data.cend()) {
+      throw key_not_found();
     } else {
-      return *found;
+      return *(found->second);
     }
   }
 
-  bool append(const std::string& key, const json_value& value) noexcept
+  ~json_object()
+  {
+    for (auto& o : data) {
+      delete o.second;
+    }
+    data.clear();
+  }
+
+  bool append(const std::string& key, json_value* value) noexcept
   {
     auto ret = data.insert(std::make_pair(key, value));
     return ret.second;
@@ -238,13 +318,13 @@ public:
   }
 
 protected:
-  value_type type() noexcept const override
+  value_type type() const noexcept override
   {
     return value_type::object;
   }
 
 private:
-  std::unordered_map<std::string, json_value> data;
+  std::unordered_map<std::string, json_value*> data;
 };
 
 MUDI_N_NS_END
@@ -265,7 +345,7 @@ public:
   json_number& operator=(const json_number& rhs)
   {
     if (&rhs == this) {
-      reutrn *this;
+      return *this;
     }
 
     pos = rhs.pos;
@@ -289,18 +369,18 @@ public:
     return *this;
   }
 
-  int int_value() noexcept const override
+  int int_value() const noexcept override
   {
     return 0;
   }
 
-  double double_value() noexcept const override
+  double double_value() const noexcept override
   {
     return 0;
   }
 
 protected:
-  value_type type() noexcept const override
+  value_type type() const noexcept override
   {
     return value_type::number;
   }
@@ -319,106 +399,62 @@ MUDI_N_NS_BEGIN
 
 class json_boolean: public json_value
 {
-
-};
-
-MUDI_N_NS_END
-
-// null
-
-MUDI_N_NS_BEGIN
-
-class json_null: public json_value
-{
-// public:
-//   json_null(const json_null&) = delete;
-//   json_null& operator=(const json_null&) = delete;
-
-protected:
-  value_type type() noexcept const override
-  {
-    return value_type::null;
-  }
-};
-
-MUDI_N_NS_END
-
-// interface
-
-MUDI_NS_BEGIN
-
-class json_value
-{
 public:
-  virtual ~json_value() noexcept;
+  json_boolean(unsigned int pos, unsigned int len, buffer_ptr buf): pos{ pos }, len{ len }, buffer{ buf }
+  {}
 
-  virtual json_value& operator[](const std::string& key) noexcept const
+  json_boolean(const json_boolean& rhs): pos{ rhs.pos }, len{ rhs.len }, buffer{ rhs.buffer }
+  {}
+
+  json_boolean& operator=(const json_boolean& rhs)
   {
-    return json_null{};
+    if (&rhs == this) {
+      return *this;
+    }
+
+    pos = rhs.pos;
+    len = rhs.len;
+    buffer = rhs.buffer;
+
+    return *this;
   }
 
-  virtual json_value& operator[](unsigned int index) const
+  json_boolean(json_boolean&& rhs): pos{ rhs.pos }, len{ rhs.len }
   {
-    return json_null{};
+    buffer = std::move(rhs.buffer);
   }
 
-  virtual bool boolean_value() noexcept const
+  json_boolean& operator=(json_boolean&& rhs)
   {
-    return false;
+    pos = rhs.pos;
+    len = rhs.len;
+    buffer = std::move(rhs.buffer);
+
+    return *this;
   }
 
-  virtual std::string string_value() noexcept const
+  bool boolean_value() const noexcept override
   {
-    return "null";
-  }
-
-  virtual int int_value() noexcept const
-  {
-    return 0;
-  }
-
-  virtual double double_value() noexcept const
-  {
-    return 0;
-  }
-
-  bool is_bool() noexcept const
-  {
-    return type() == value_type::boolean;
-  }
-
-  bool is_array() noexcept const
-  {
-    return type() == value_type::array;
-  }
-
-  bool is_string() noexcept const
-  {
-    return type() == value_type::string;
-  }
-
-  bool is_number() noexcept const
-  {
-    return type() == value_type::number;
-  }
-
-  bool is_object() noexcept const
-  {
-    return type() == value_type::object;
-  }
-
-  bool is_null() noexcept const
-  {
-    return type() == value_type::null;
+    auto str = buffer->substr(pos, len);
+    if (0 == str.compare("true")) {
+      return true;
+    } else {
+      return false;
+    }
   }
 
 protected:
-  virtual value_type type() = 0;
+  value_type type() const noexcept override
+  {
+    return value_type::boolean;
+  }
+
+private:
+  unsigned int pos;
+  unsigned int len;
+  buffer_ptr buffer;
 };
 
-std::unique_ptr<json_value> parse_string(const std::string& str);
-std::unique_ptr<json_value> parse_cstring(const char* cstr, unsigned int len);
-
-MUDI_NS_END
+MUDI_N_NS_END
 
 #endif
