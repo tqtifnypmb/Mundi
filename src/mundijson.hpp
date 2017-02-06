@@ -5,6 +5,7 @@
 #include <vector>
 #include <string>
 
+#include <sstream>
 #include <utility>  // make_pair
 #include <memory>   // share_ptr
 #include <cctype>
@@ -52,7 +53,7 @@ public:
   }
 };
 
-class premature_eof: public std::exception
+class eof: public std::exception
 {
 public:
   const char* what() const noexcept override
@@ -259,6 +260,24 @@ public:
     return *data.at(index);
   }
 
+  std::string string_value() const noexcept override
+  {
+    std::ostringstream sout;
+
+    sout<<"[";
+    for (const auto& val : data) {
+      sout<<val->string_value()<<", ";
+    }
+
+    std::string cnt = sout.str();
+    if (!data.empty()) {
+      cnt.erase(cnt.end() - 2, cnt.end());
+    }
+    cnt.push_back(']');
+
+    return cnt;
+  }
+
 protected:
   value_type type() const noexcept override
   {
@@ -337,6 +356,23 @@ public:
       data.erase(found);
   }
 
+  std::string string_value() const noexcept override
+  {
+    std::ostringstream sout{"{"};
+
+    for (const auto& val : data) {
+      sout<<val.first<<": "<<val.second->string_value()<<", ";
+    }
+    std::string cnt = sout.str();
+
+    if (!data.empty()) {
+      cnt.erase(cnt.end() - 2, cnt.end());
+    }
+
+    cnt.push_back('}');
+    return cnt;
+  }
+
 protected:
   value_type type() const noexcept override
   {
@@ -361,6 +397,8 @@ public:
 
   json_number(const json_number& rhs): pos{ rhs.pos }, len{ rhs.len }, buffer{ rhs.buffer }
   {}
+
+  ~json_number() = default;
 
   json_number& operator=(const json_number& rhs)
   {
@@ -399,6 +437,11 @@ public:
     return 0;
   }
 
+  std::string string_value() const noexcept override
+  {
+    return buffer->substr(pos, len);
+  }
+
 protected:
   value_type type() const noexcept override
   {
@@ -425,6 +468,8 @@ public:
 
   json_boolean(const json_boolean& rhs): pos{ rhs.pos }, len{ rhs.len }, buffer{ rhs.buffer }
   {}
+
+  ~json_boolean() = default;
 
   json_boolean& operator=(const json_boolean& rhs)
   {
@@ -461,6 +506,11 @@ public:
     } else {
       return false;
     }
+  }
+
+  std::string string_value() const noexcept override
+  {
+    return boolean_value() ? "true" : "false";
   }
 
 protected:
@@ -527,13 +577,14 @@ public:
   }
 
 private:
-  value_type get_next_value_type() const
+  value_type get_next_value_type()
   {
     for(;;) {
       char c = peek_next_or_throw();
       c = tolower(c);
 
       if (isspace(c)) {
+        ++cursor;
         continue;
       } else if (c == '{') {
         return value_type::object;
@@ -546,7 +597,7 @@ private:
       } else if (isdigit(c)) {
         return value_type::number;
       } else if (c == '-') {
-        char next = peek_next_or_throw(2);
+        char next = peek_next_or_throw(1);
         if (isdigit(next)) {
           return value_type::number;
         } else {
@@ -558,17 +609,17 @@ private:
     }
   }
 
-  char peek_next_or_throw(unsigned int delta = 1) const
+  char peek_next_or_throw(unsigned int delta = 0) const
   {
     if (cursor + delta < end) {
       return buffer->at(cursor + delta);
     }
-    throw premature_eof();
+    throw eof();
   }
 
   char peek_next_nonspace_or_throw(unsigned int* pos = nullptr) const
   {
-    for (unsigned int i = cursor + 1; i < end; ++i) {
+    for (unsigned int i = cursor; i < end; ++i) {
       char c = buffer->at(i);
       if (!isspace(c)) {
         if (pos != nullptr) {
@@ -577,7 +628,7 @@ private:
         return c;
       }
     }
-    throw premature_eof();
+    throw eof();
   }
 
   char get_next_or_throw()
@@ -590,13 +641,14 @@ private:
   char get_next_nonspace_or_throw()
   {
     for (;;) {
-      if (++cursor < end) {
+      if (cursor < end) {
         char c = buffer->at(cursor);
+        cursor += 1;
         if (!isspace(c)) {
           return c;
         }
       } else {
-        throw premature_eof();
+        throw eof();
       }
     }
   }
@@ -605,25 +657,36 @@ private:
   {
     unsigned int begin = cursor;
 
-    char h = get_next_or_throw();   // '-' or '0'
+    char h = get_next_or_throw();   // '-' or digit
     for (;;) {
-      char c = peek_next_or_throw();
+      char c;
+      try {
+        c = peek_next_or_throw();   // eof also treated as end of number object
+      } catch (...) {
+        if (h == '-') {
+          throw unknown_input();
+        }
+
+        json_number* n = new json_number(begin, cursor - begin, buffer);
+        return std::unique_ptr<json_value>(n);
+      }
 
       if (!isdigit(c)) {
         c = tolower(c);
-        if (c == '.' && h == '0') {
+        if (c == '.' && (cursor > 0 && buffer->at(cursor - 1) != '-')) {
           ++cursor;
           continue;
         } else if (c == 'e') {
           ++cursor;
           char next = get_next_or_throw();
-          char next2 = get_next_or_throw();
-          if ((next == '+' || next == '-') && isdigit(next2)) {
+          if (next == '+' || next == '-' || isdigit(next)) {
             buffer->at(cursor - 2) = c;
             continue;
+          } else {
+            throw unknown_input();
           }
         } else {
-          json_number* n = new json_number(begin, cursor - begin + 1, buffer);
+          json_number* n = new json_number(begin, cursor - begin, buffer);
           return std::unique_ptr<json_value>(n);
         }
       }
@@ -748,7 +811,7 @@ std::unique_ptr<json_value> json_parser::parse_object()
   }
 
   for (;;) {
-    auto key = parse_string();
+    auto key = parse();
 
     char c = get_next_nonspace_or_throw();
     if (c == ':') {
@@ -772,16 +835,24 @@ std::unique_ptr<json_value> json_parser::parse_object()
 
 MUDI_N_NS_END
 
+// interface
+
 MUDI_NS_BEGIN
 
 std::unique_ptr<json_value> parse_string(const std::string& str)
 {
+  if (str.empty()) {
+    return std::make_unique<json_value>();
+  }
   json_parser p{ str };
   return p.parse();
 }
 
 std::unique_ptr<json_value> parse_cstring(const char* cstr, unsigned int len)
 {
+  if (len == 0) {
+    return std::make_unique<json_value>();
+  }
   json_parser p{cstr, len};
   return p.parse();
 }
