@@ -7,7 +7,7 @@
 
 #include <utility>  // make_pair
 #include <memory>   // share_ptr
-#include <cctype>   // isspace
+#include <cctype>
 #include <exception>
 
 #define MUDI_NS_BEGIN namespace mundi {
@@ -226,6 +226,7 @@ MUDI_N_NS_BEGIN
 
 class json_array: public json_value
 {
+  friend json_parser;
 public:
   json_array() = default;
 
@@ -274,7 +275,7 @@ protected:
   }
 
 private:
-  void append(json_value* val) noexcept
+  void push_back(json_value* val) noexcept
   {
     data.push_back(val);
   }
@@ -332,7 +333,7 @@ public:
     data.clear();
   }
 
-  bool append(const std::string& key, json_value* value) noexcept
+  bool push_back(const std::string& key, json_value* value) noexcept
   {
     auto ret = data.insert(std::make_pair(key, value));
     return ret.second;
@@ -513,11 +514,29 @@ public:
 
   std::unique_ptr<json_value> parse()
   {
+    while(cursor < end) {
+      auto type = get_next_value_type();
+      switch (type) {
+        case value_type::array:
+        return parse_array();
 
+        case value_type::boolean:
+        return parse_boolean();
+
+        case value_type::number:
+        return parse_number();
+
+        case value_type::object:
+        return parse_object();
+
+        case value_type::string:
+        return parse_string();
+      }
+    }
   }
 
 private:
-  value_type get_next_value_type()
+  value_type get_next_value_type() const
   {
     for(;;) {
       char c = peek_or_throw();
@@ -529,6 +548,8 @@ private:
         return value_type::array;
       } else if (c == '\"') {
         return value_type::string;
+      } else if (c == 't' || c == 'f') {
+        return value_type::boolean;
       } else if (isdigit(c)) {
         return value_type::number;
       } else if (c == '-') {
@@ -542,7 +563,7 @@ private:
     }
   }
 
-  char peek_or_throw(unsigned int delta = 1)
+  char peek_or_throw(unsigned int delta = 1) const
   {
     if (cursor + delta < end) {
       return buffer->at(cursor);
@@ -557,8 +578,104 @@ private:
     return ret;
   }
 
-  json_number parse_number();
-  json_string parse_string();
+  std::unique_ptr<json_value> parse_string()
+  {
+    Ensures(buffer->at(cursor) == "\"");   // precondition
+
+    cursor += 1;
+    unsigned int begin = cursor;
+
+    for (unsigned int i = cursor; i < end; ++i) {
+      char c = buffer->at(i);
+      if (c == "\\") {
+        char next = get_next_or_throw();
+        if (next == "\"") {
+          continue;
+        }
+      }
+
+      if (c == "\"") {
+        break;
+      }
+    }
+
+    Ensures(buffer->at(cursor - 1) == "\"");  // postcondition
+  }
+
+  std::unique_ptr<json_value> parse_number()
+  {
+    unsigned int begin = cursor;
+
+    char h = get_next_or_throw();   // '-' or '0'
+    for (;;) {
+      char c = peek_or_throw();
+
+      if (!isdigit(c)) {
+        c = tolower(c);
+        if (c == '.' && h == '0') {
+          ++cursor;
+          continue;
+        } else if (c == 'e') {
+          ++cursor;
+          char next = get_next_or_throw();
+          char next2 = get_next_or_throw();
+          if ((next == '+' || next == '-') && isdigit(next2)) {
+            buffer[cursor - 2] = c;
+            continue;
+          }
+        } else {
+          json_number* n = new json_number(begin, cursor - begin + 1, buffer);
+          return std::unique_ptr<json_value>(n);
+        }
+      }
+      ++cursor;
+    }
+  }
+
+  std::unique_ptr<json_value> parse_boolean()
+  {
+    unsigned int begin = cursor;
+
+    char c1 = get_next_or_throw();
+    c1 = tolower(c1);
+
+    char c2 = get_next_or_throw();
+    c2 = tolower(c2);
+
+    char c3 = get_next_or_throw();
+    c3 = tolower(c3);
+
+    char c4 = get_next_or_throw();
+    c4 = tolower(c4);
+
+    if (c1 == 't' && c2 == 'r' && c3 =='u' && c4 == 'e') {
+      buffer[begin] = c1;
+      buffer[begin + 1] = c2;
+      buffer[begin + 2] = c3;
+      buffer[begin + 3] = c4;
+
+      json_boolean* b = new json_boolean(begin, 4, buffer);
+      return std::unique_ptr<json_value>(b);
+    } else if (c1 == 'f' && c2 == 'a' && c3 =='l' && c4 == 's') {
+      char c5 = get_next_or_throw();
+      c5 = tolower(c5);
+      if (c5 == 'e') {
+        buffer[begin] = c1;
+        buffer[begin + 1] = c2;
+        buffer[begin + 2] = c3;
+        buffer[begin + 3] = c4;
+        buffer[begin + 4] = c5;
+
+        json_boolean* b = new json_boolean(begin, 5, buffer);
+        return std::unique_ptr<json_value>(b);
+      }
+    } else {
+      throw unknown_input();
+    }
+  }
+
+  std::unique_ptr<json_value> parse_array();
+  std::unique_ptr<json_value> parse_object();
 
 private:
   unsigned int cursor;
@@ -566,33 +683,68 @@ private:
   buffer_ptr buffer;
 };
 
-json_number json_parser::parse_number()
+std::unique_ptr<json_value> json_parser::parse_array()
 {
+  char h = get_next_or_throw();
+  Ensures(h == '[');
 
-}
+  auto array = std::make_unique<json_array>();
 
-json_string json_parser::pase_string()
-{
-  Ensures(buffer->at(cursor) == "\"");   // precondition
-
-  cursor += 1;
-  unsigned int begin = cursor;
-
-  for (unsigned int i = cursor; i < end; ++i) {
-    char c = buffer->at(i);
-    if (c == "\\") {
-      char next = get_next_or_throw();
-      if (next == "\"") {
-        continue;
-      }
-    }
-
-    if (c == "\"") {
-      break;
-    }
+  if (peek_or_throw() == ']') {
+    return array;
   }
 
-  Ensures(buffer->at(cursor - 1) == "\"");  // postcondition
+  for (;;) {
+    auto val = parse();
+    array->push_back(val.release());
+
+    char c = get_next_or_throw();
+    while (isspace(c)) {
+      c = get_next_or_throw();
+    }
+
+    if (c == ',') {
+      char next = peek_or_throw();
+      if (next == ']') {
+        ++cursor;
+        return array;
+      }
+    } else if (c == ']') {
+      return array;
+    }
+  }
+}
+
+std::unique_ptr<json_value> json_parser::parse_object()
+{
+  char h = get_next_or_throw();
+  Ensures(h == '{');
+
+  auto obj = std::make_unique<json_object>();
+
+  if (peek_or_throw() == '}') {
+    return obj;
+  }
+
+  for (;;) {
+    auto key = parse();
+
+    char c = get_next_or_throw();
+    while (isspace(c)) {
+      c = get_next_or_throw();
+    }
+
+    if (c == ':') {
+      auto val = parse();
+      obj->push_back(key, val);
+    }
+
+    c = peek_or_throw();
+    if (c == '}') {
+      ++cursor;
+      return obj;
+    }
+  }
 }
 
 MUDI_N_NS_END
