@@ -58,7 +58,7 @@ class eof: public std::exception
 public:
   const char* what() const noexcept override
   {
-    return "Input end prematurely";
+    return "EOF";
   }
 };
 
@@ -510,7 +510,7 @@ public:
 
   std::string string_value() const noexcept override
   {
-    return boolean_value() ? "true" : "false";
+    return buffer->substr(pos, len);
   }
 
 protected:
