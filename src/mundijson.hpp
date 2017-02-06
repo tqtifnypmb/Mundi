@@ -8,6 +8,7 @@
 #include <utility>  // make_pair
 #include <memory>   // share_ptr
 #include <cctype>
+#include <cassert>
 #include <exception>
 
 #define MUDI_NS_BEGIN namespace mundi {
@@ -78,7 +79,7 @@ MUDI_NS_BEGIN
 class json_value
 {
 public:
-  virtual ~json_value() noexcept;
+  virtual ~json_value() noexcept {}
 
   virtual const json_value& operator[](const std::string& key) const
   {
@@ -147,18 +148,6 @@ protected:
   }
 };
 
-std::unique_ptr<json_value> parse_string(const std::string& str)
-{
-  json_parser p{ str };
-  return p.parse();
-}
-
-std::unique_ptr<json_value> parse_cstring(const char* cstr, unsigned int len)
-{
-  json_parser p{cstr, len}
-  return p.parse();
-}
-
 MUDI_NS_END
 
 // string
@@ -223,6 +212,8 @@ MUDI_N_NS_END
 // array
 
 MUDI_N_NS_BEGIN
+
+class json_parser;
 
 class json_array: public json_value
 {
@@ -500,13 +491,13 @@ class json_parser
 public:
   json_parser(const std::string& input): cursor{ 0 }
   {
-    buffer = make_shared(input);
+    buffer = std::make_shared<std::string>(input);
     end = input.length();
   }
 
   json_parser(const char* input, unsigned int len): cursor{ 0 }, end{ len }
   {
-    buffer = make_shared(input, len);
+    buffer = std::make_shared<std::string>(input, len);
   }
 
   json_parser(const json_parser&) = delete;
@@ -555,7 +546,7 @@ private:
       } else if (isdigit(c)) {
         return value_type::number;
       } else if (c == '-') {
-        char next = peek_or_throw(2);
+        char next = peek_next_or_throw(2);
         if (isdigit(next)) {
           return value_type::number;
         } else {
@@ -575,7 +566,7 @@ private:
     throw premature_eof();
   }
 
-  char peek_next_nonspace_or_throw(unsigned int* pos == nullptr) const
+  char peek_next_nonspace_or_throw(unsigned int* pos = nullptr) const
   {
     for (unsigned int i = cursor + 1; i < end; ++i) {
       char c = buffer->at(i);
@@ -610,30 +601,6 @@ private:
     }
   }
 
-  std::unique_ptr<json_value> parse_string()
-  {
-    Ensures(buffer->at(cursor) == "\"");   // precondition
-
-    cursor += 1;
-    unsigned int begin = cursor;
-
-    for (unsigned int i = cursor; i < end; ++i) {
-      char c = buffer->at(i);
-      if (c == "\\") {
-        char next = get_next_or_throw();
-        if (next == "\"") {
-          continue;
-        }
-      }
-
-      if (c == "\"") {
-        break;
-      }
-    }
-
-    Ensures(buffer->at(cursor - 1) == "\"");  // postcondition
-  }
-
   std::unique_ptr<json_value> parse_number()
   {
     unsigned int begin = cursor;
@@ -652,7 +619,7 @@ private:
           char next = get_next_or_throw();
           char next2 = get_next_or_throw();
           if ((next == '+' || next == '-') && isdigit(next2)) {
-            buffer[cursor - 2] = c;
+            buffer->at(cursor - 2) = c;
             continue;
           }
         } else {
@@ -681,10 +648,10 @@ private:
     c4 = tolower(c4);
 
     if (c1 == 't' && c2 == 'r' && c3 =='u' && c4 == 'e') {
-      buffer[begin] = c1;
-      buffer[begin + 1] = c2;
-      buffer[begin + 2] = c3;
-      buffer[begin + 3] = c4;
+      buffer->at(begin) = c1;
+      buffer->at(begin + 1) = c2;
+      buffer->at(begin + 2) = c3;
+      buffer->at(begin + 3) = c4;
 
       json_boolean* b = new json_boolean(begin, 4, buffer);
       return std::unique_ptr<json_value>(b);
@@ -692,11 +659,11 @@ private:
       char c5 = get_next_or_throw();
       c5 = tolower(c5);
       if (c5 == 'e') {
-        buffer[begin] = c1;
-        buffer[begin + 1] = c2;
-        buffer[begin + 2] = c3;
-        buffer[begin + 3] = c4;
-        buffer[begin + 4] = c5;
+        buffer->at(begin) = c1;
+        buffer->at(begin + 1) = c2;
+        buffer->at(begin + 2) = c3;
+        buffer->at(begin + 3) = c4;
+        buffer->at(begin + 4) = c5;
 
         json_boolean* b = new json_boolean(begin, 5, buffer);
         return std::unique_ptr<json_value>(b);
@@ -706,6 +673,7 @@ private:
     }
   }
 
+  std::unique_ptr<json_value> parse_string();
   std::unique_ptr<json_value> parse_array();
   std::unique_ptr<json_value> parse_object();
 
@@ -715,6 +683,30 @@ private:
   buffer_ptr buffer;
 };
 
+std::unique_ptr<json_value> json_parser::parse_string()
+{
+  Ensures(buffer->at(cursor) == '\"');   // precondition
+
+  cursor += 1;
+  unsigned int begin = cursor;
+
+  for (unsigned int i = cursor; i < end; ++i) {
+    char c = buffer->at(i);
+    if (c == '\\') {
+      char next = get_next_or_throw();
+      if (next == '\"') {
+        continue;
+      }
+    }
+
+    if (c == '\"') {
+      break;
+    }
+  }
+
+  Ensures(buffer->at(cursor - 1) == '\"');  // postcondition
+}
+
 std::unique_ptr<json_value> json_parser::parse_array()
 {
   char h = get_next_or_throw();
@@ -723,7 +715,7 @@ std::unique_ptr<json_value> json_parser::parse_array()
   auto array = std::make_unique<json_array>();
 
   if (peek_next_nonspace_or_throw() == ']') {
-    return array;
+    return std::unique_ptr<json_value>(array.release());
   }
 
   for (;;) {
@@ -736,10 +728,10 @@ std::unique_ptr<json_value> json_parser::parse_array()
       char next = peek_next_nonspace_or_throw(&pos);
       if (next == ']') {
         cursor = pos;
-        return array;
+        return std::unique_ptr<json_value>(array.release());
       }
     } else if (c == ']') {
-      return array;
+      return std::unique_ptr<json_value>(array.release());
     }
   }
 }
@@ -752,7 +744,7 @@ std::unique_ptr<json_value> json_parser::parse_object()
   auto obj = std::make_unique<json_object>();
 
   if (peek_next_nonspace_or_throw() == '}') {
-    return obj;
+    return std::unique_ptr<json_value>(obj.release());
   }
 
   for (;;) {
@@ -761,7 +753,7 @@ std::unique_ptr<json_value> json_parser::parse_object()
     char c = get_next_nonspace_or_throw();
     if (c == ':') {
       auto val = parse();
-      obj->push_back(*key, val.release());
+      obj->push_back(key->string_value(), val.release());
     }
 
     c = get_next_nonspace_or_throw();
@@ -770,14 +762,30 @@ std::unique_ptr<json_value> json_parser::parse_object()
       c = peek_next_nonspace_or_throw(&pos);
       if (c == '}') {
         cursor = pos;
-        return obj;
+        return std::unique_ptr<json_value>(obj.release());
       }
     } else if (c == '}') {
-      return obj;
+      return std::unique_ptr<json_value>(obj.release());
     }
   }
 }
 
 MUDI_N_NS_END
+
+MUDI_NS_BEGIN
+
+std::unique_ptr<json_value> parse_string(const std::string& str)
+{
+  json_parser p{ str };
+  return p.parse();
+}
+
+std::unique_ptr<json_value> parse_cstring(const char* cstr, unsigned int len)
+{
+  json_parser p{cstr, len};
+  return p.parse();
+}
+
+MUDI_NS_END
 
 #endif
