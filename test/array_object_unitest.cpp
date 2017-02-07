@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "../mundijson.hpp"
+#include "../src/mundijson.hpp"
 
 #include <string>
 

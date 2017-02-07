@@ -1,4 +1,4 @@
-#include "../mundijson.hpp"
+#include "../src/mundijson.hpp"
 #include <string>
 #include <iostream>
 
