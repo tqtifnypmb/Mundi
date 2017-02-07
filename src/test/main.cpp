@@ -13,6 +13,7 @@ void simple_test(const std::string& jstr) {
 
 int main()
 {
+  simple_test("-1234567890");
   simple_test({"true"});
   simple_test({"TrUe"});
   simple_test({"FaLSe"});

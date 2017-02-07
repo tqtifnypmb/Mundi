@@ -133,6 +133,16 @@ public:
     return type() == value_type::number;
   }
 
+  virtual bool is_int() const noexcept
+  {
+    return false;
+  }
+
+  virtual bool is_double() const noexcept
+  {
+    return false;
+  }
+
   bool is_object() const noexcept
   {
     return type() == value_type::object;
@@ -270,7 +280,11 @@ public:
 
     sout<<"[";
     for (const auto& val : data) {
-      sout<<val->string_value()<<", ";
+      if (val->is_string()) {
+        sout<<"\""<<val->string_value()<<"\""<<", ";
+      } else {
+        sout<<val->string_value()<<", ";
+      }
     }
 
     std::string cnt = sout.str();
@@ -430,6 +444,16 @@ public:
     buffer = std::move(rhs.buffer);
 
     return *this;
+  }
+
+  bool is_int() const noexcept override
+  {
+    return std::string::npos == string_value().find(".");
+  }
+
+  bool is_double() const noexcept override
+  {
+    return !is_int();
   }
 
   int int_value() const noexcept override
@@ -724,13 +748,13 @@ private:
   {
     unsigned int begin = cursor;
 
-    char h = get_next_or_throw();   // '-' or digit
+    char _ = get_next_or_throw();   // '-' or digit
     for (;;) {
       char c;
       try {
         c = peek_next_or_throw();   // eof also treated as end of number object
       } catch (...) {
-        if (h == '-') {
+        if (buffer->at(cursor - 1) == '-') {
           throw unknown_input();
         }
 
@@ -884,7 +908,7 @@ std::unique_ptr<json_value> json_parser::parse_string()
   string_gap::gap_delta delta = gaps.remove_gaps(buffer);
   cursor -= delta;
   end -= delta;
-  
+
   json_string* s = new json_string(begin, cursor - begin - 1, buffer);
   return std::unique_ptr<json_value>(s);
 }
@@ -978,4 +1002,10 @@ std::unique_ptr<json_value> parse_cstring(const char* cstr, unsigned int len)
 
 MUDI_NS_END
 
+// in case macro leak
+
+#undef MUDI_NS_BEGIN
+#undef MUDI_NS_END
+#undef MUDI_N_NS_BEGIN
+#undef MUDI_N_NS_END
 #endif
