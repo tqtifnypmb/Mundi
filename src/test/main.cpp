@@ -22,5 +22,7 @@ int main()
   simple_test({ "[]" });
   simple_test({ "{}" });
   simple_test({ "" });
-  //simple_test({ "{\"key\": true, \"key2\": false, \"key3\": 132, {}}" });
+  simple_test({ "\"abcdef\"" });
+  simple_test({ "{\"key\": true, \"key2\": false, \"key3\": 132, \"key4\": {}}" });
+  simple_test({ "\"abc\tdef\n\""});
 }

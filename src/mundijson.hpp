@@ -5,11 +5,12 @@
 #include <vector>
 #include <string>
 
-#include <sstream>
+#include <algorithm>  // max
+#include <sstream>  // ostringstream
 #include <utility>  // make_pair
-#include <memory>   // share_ptr
+#include <memory>   // share_ptr unique_ptr
 #include <cctype>
-#include <cassert>
+#include <cassert>  // assert
 #include <exception>
 
 #define MUDI_NS_BEGIN namespace mundi {
@@ -80,7 +81,7 @@ MUDI_NS_BEGIN
 class json_value
 {
 public:
-  virtual ~json_value() noexcept {}
+  virtual ~json_value() noexcept = default;
 
   virtual const json_value& operator[](const std::string& key) const
   {
@@ -148,6 +149,9 @@ protected:
     return value_type::null;
   }
 };
+
+std::unique_ptr<json_value> parse_string(const std::string& str);
+std::unique_ptr<json_value> parse_cstring(const char* cstr, unsigned int len);
 
 MUDI_NS_END
 
@@ -358,8 +362,9 @@ public:
 
   std::string string_value() const noexcept override
   {
-    std::ostringstream sout{"{"};
+    std::ostringstream sout;
 
+    sout<<"{";
     for (const auto& val : data) {
       sout<<val.first<<": "<<val.second->string_value()<<", ";
     }
@@ -429,12 +434,12 @@ public:
 
   int int_value() const noexcept override
   {
-    return 0;
+    return std::stoi(string_value());
   }
 
   double double_value() const noexcept override
   {
-    return 0;
+    return std::stod(string_value());
   }
 
   std::string string_value() const noexcept override
@@ -527,7 +532,7 @@ private:
 
 MUDI_N_NS_END
 
-// parser
+// gap
 
 MUDI_N_NS_BEGIN
 
@@ -535,6 +540,64 @@ void Ensures(bool pred)
 {
   assert(pred);
 }
+
+class string_gap
+{
+public:
+  typedef unsigned int gap_delta;
+
+  void push_back(unsigned int begin, unsigned int len)
+  {
+    if (gaps.empty()) {
+      gaps.push_back(std::make_pair(begin, len));
+    } else {
+      auto& last = gaps.back();
+      if (last.first + last.second >= begin) {
+        last.second = std::max(last.second, (begin - last.first) + len);
+      } else {
+        gaps.push_back(std::make_pair(begin, len));
+      }
+    }
+  }
+
+  bool can_collapse_at_pos(unsigned int pos) const
+  {
+    if (gaps.empty()) {
+      return false;
+    } else {
+      const auto& last = gaps.back();
+      return last.first + last.second > pos;
+    }
+  }
+
+  gap_delta remove_gaps(buffer_ptr buffer)
+  {
+    if (gaps.empty()) {
+      return 0;
+    }
+
+    gap_delta delta = 0;
+    unsigned int origin_length = buffer->length();
+    for (auto rite = gaps.rbegin(); rite != gaps.rend(); ++rite) {
+      buffer->erase(rite->first, rite->second);
+      delta += rite->second;
+    }
+
+    Ensures(delta == (origin_length - buffer->length()));
+    gaps.clear();
+
+    return delta;
+  }
+
+private:
+  std::vector<std::pair<unsigned int, unsigned int>> gaps;
+};
+
+MUDI_N_NS_END
+
+// parser
+
+MUDI_N_NS_BEGIN
 
 class json_parser
 {
@@ -572,8 +635,12 @@ public:
 
         case value_type::string:
         return parse_string();
+
+        case value_type::null:
+        break;
       }
     }
+    return std::make_unique<json_value>();
   }
 
 private:
@@ -731,9 +798,8 @@ private:
         json_boolean* b = new json_boolean(begin, 5, buffer);
         return std::unique_ptr<json_value>(b);
       }
-    } else {
-      throw unknown_input();
     }
+    throw unknown_input();
   }
 
   std::unique_ptr<json_value> parse_string();
@@ -753,12 +819,58 @@ std::unique_ptr<json_value> json_parser::parse_string()
   cursor += 1;
   unsigned int begin = cursor;
 
-  for (unsigned int i = cursor; i < end; ++i) {
-    char c = buffer->at(i);
+  string_gap gaps;
+  auto append_gap = [=, &gaps](unsigned int begin1, unsigned begin2, char escaped) {
+    if (gaps.can_collapse_at_pos(begin1)) {
+      this->buffer->at(begin2) = escaped;
+      gaps.push_back(begin1, 1);
+    } else {
+      this->buffer->at(begin1) = escaped;
+      gaps.push_back(begin2, 1);
+    }
+  };
+
+  for (;;) {
+    char c = get_next_or_throw();
+
     if (c == '\\') {
       char next = get_next_or_throw();
-      if (next == '\"') {
-        continue;
+      switch (next) {
+        case '\"':
+        append_gap(cursor - 2, cursor - 1, '\"');
+        break;
+
+        case 'r':
+        append_gap(cursor - 2, cursor - 1, '\r');
+        break;
+
+        case 'n':
+        append_gap(cursor - 2, cursor - 1, '\n');
+        break;
+
+        case 't':
+        append_gap(cursor - 2, cursor - 1, '\t');
+        break;
+
+        case 'b':
+        append_gap(cursor - 2, cursor - 1, '\b');
+        break;
+
+        case '\\':
+        append_gap(cursor - 2, cursor - 1, '\\');
+        break;
+
+        case 'f':
+        append_gap(cursor - 2, cursor - 1, '\f');
+        break;
+
+        case 'u': {
+          char u1 = get_next_or_throw();
+          char u2 = get_next_or_throw();
+          char u3 = get_next_or_throw();
+          char u4 = get_next_or_throw();
+          break;
+        }
       }
     }
 
@@ -768,6 +880,13 @@ std::unique_ptr<json_value> json_parser::parse_string()
   }
 
   Ensures(buffer->at(cursor - 1) == '\"');  // postcondition
+
+  string_gap::gap_delta delta = gaps.remove_gaps(buffer);
+  cursor -= delta;
+  end -= delta;
+  
+  json_string* s = new json_string(begin, cursor - begin - 1, buffer);
+  return std::unique_ptr<json_value>(s);
 }
 
 std::unique_ptr<json_value> json_parser::parse_array()
@@ -807,11 +926,13 @@ std::unique_ptr<json_value> json_parser::parse_object()
   auto obj = std::make_unique<json_object>();
 
   if (peek_next_nonspace_or_throw() == '}') {
+    ++cursor;
     return std::unique_ptr<json_value>(obj.release());
   }
 
   for (;;) {
     auto key = parse();
+    Ensures(key->is_string());
 
     char c = get_next_nonspace_or_throw();
     if (c == ':') {
@@ -834,8 +955,6 @@ std::unique_ptr<json_value> json_parser::parse_object()
 }
 
 MUDI_N_NS_END
-
-// interface
 
 MUDI_NS_BEGIN
 
