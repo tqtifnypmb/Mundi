@@ -42,4 +42,6 @@ TEST(json_array, mix)
 
   EXPECT_TRUE(val->is_array());
   EXPECT_EQ(val->string_value(), "[true, 123, 0.123, -1.0, \"abc\"]");
+  EXPECT_TRUE((*val)[0].is_bool());
+  EXPECT_EQ((*val)[0].boolean_value(), true);
 }
