@@ -46,3 +46,15 @@ TEST(json_object, basic3)
   EXPECT_TRUE(val->is_object());
   EXPECT_TRUE((*val)["key"].is_object());
 }
+
+TEST(object_type_detect, space)
+{
+  std::string jstr { "      \n\n\n\n{ \t\t\n\n \"key\": \n\n\n\"value\"\n\n\n\n, \t\n \"key2\": true\n,\"key3\": \n\n{\n\n\"key4\"\n:\nfalse}}\t\n" };
+  auto val = parse_string(jstr);
+
+  EXPECT_TRUE(val->is_object());
+  EXPECT_EQ((*val)["key"].string_value(), "value");
+  EXPECT_EQ((*val)["key2"].boolean_value(), true);
+  EXPECT_TRUE((*val)["key3"].is_object());
+  EXPECT_EQ((*val)["key3"]["key4"].boolean_value(), false);
+}

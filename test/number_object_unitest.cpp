@@ -91,3 +91,39 @@ TEST(json_number, double_3)
   EXPECT_EQ(val->double_value(), -1.789);
   EXPECT_EQ(val->int_value(), -1);
 }
+
+TEST(json_number, exp)
+{
+  std::string jstr{ "1.1e-10" };
+  auto val = parse_string(jstr);
+
+  EXPECT_TRUE(val->is_number());
+  EXPECT_EQ(val->double_value(), 1.1e-10);
+}
+
+TEST(json_number, exp_2)
+{
+  std::string jstr{ "1.1e2" };
+  auto val = parse_string(jstr);
+
+  EXPECT_TRUE(val->is_number());
+  EXPECT_EQ(val->double_value(), 1.1e2);
+}
+
+TEST(object_type_detect, space)
+{
+  std::string jstr{ "\n\n\n\n123\n\n\n\t" };
+  auto val = parse_string(jstr);
+
+  EXPECT_TRUE(val->is_number());
+  EXPECT_EQ(val->int_value(), 123);
+}
+
+TEST(object_type_detect, space_2)
+{
+  std::string jstr{ "\n\n\n\n1.23\n\n\n\t" };
+  auto val = parse_string(jstr);
+
+  EXPECT_TRUE(val->is_number());
+  EXPECT_EQ(val->double_value(), 1.23);
+}

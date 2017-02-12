@@ -69,3 +69,12 @@ TEST(json_string, mix)
   EXPECT_TRUE(val->is_string());
   EXPECT_EQ(val->string_value(), "abcdef饮食123");
 }
+
+TEST(object_type_detect, space)
+{
+  std::string jstr{ "\n\n\n\n\t\t\t\r\r\r\"abcdef\"\n\n\n" };
+  auto val = parse_string(jstr);
+
+  EXPECT_TRUE(val->is_string());
+  EXPECT_EQ(val->string_value(), "abcdef");
+}

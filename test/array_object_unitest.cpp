@@ -45,3 +45,23 @@ TEST(json_array, mix)
   EXPECT_TRUE((*val)[0].is_bool());
   EXPECT_EQ((*val)[0].boolean_value(), true);
 }
+
+TEST(object_type_detect, space)
+{
+  std::string jstr{ "\n\n\n\n[\n\n\ntrue\n\n,123\n\n,\n\n-1.0\n,\"abc\"\n\n]\n\n\n\n" };
+  auto val = parse_string(jstr);
+
+  EXPECT_TRUE(val->is_array());
+  EXPECT_EQ((*val)[0].boolean_value(), true);
+  EXPECT_EQ((*val)[1].int_value(), 123);
+  EXPECT_EQ((*val)[2].double_value(), -1.0);
+  EXPECT_EQ((*val)[3].string_value(), "abc");
+}
+
+TEST(object_type_detect, space_2)
+{
+  std::string jstr{ "\n\n\n\n[\n\n\n]\n\n\n\n" };
+  auto val = parse_string(jstr);
+
+  EXPECT_TRUE(val->is_array());
+}
