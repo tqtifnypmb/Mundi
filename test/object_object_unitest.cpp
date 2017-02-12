@@ -22,7 +22,7 @@ TEST(json_object, basic)
   EXPECT_TRUE(val->is_object());
   EXPECT_EQ((*val)["number"].int_value(), 123);
   EXPECT_EQ((*val)[{"string"}].string_value(), "abc");
-  EXPECT_EQ((*val)[{"boolean"}].boolean_value(), true);
+  EXPECT_EQ((*val)[{"boolean"}].bool_value(), true);
 }
 
 TEST(json_object, basic2)
@@ -63,9 +63,9 @@ TEST(object_type_detect, space)
 
   EXPECT_TRUE(val->is_object());
   EXPECT_EQ((*val)["key"].string_value(), "value");
-  EXPECT_EQ((*val)["key2"].boolean_value(), true);
+  EXPECT_EQ((*val)["key2"].bool_value(), true);
   EXPECT_TRUE((*val)["key3"].is_object());
-  EXPECT_EQ((*val)["key3"]["key4"].boolean_value(), false);
+  EXPECT_EQ((*val)["key3"]["key4"].bool_value(), false);
 }
 
 TEST(object_type_detect, space_2)

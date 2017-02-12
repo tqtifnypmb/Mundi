@@ -43,7 +43,7 @@ TEST(json_array, mix)
   EXPECT_TRUE(val->is_array());
   EXPECT_EQ(val->string_value(), "[true, 123, 0.123, -1.0, \"abc\"]");
   EXPECT_TRUE((*val)[0].is_bool());
-  EXPECT_EQ((*val)[0].boolean_value(), true);
+  EXPECT_EQ((*val)[0].bool_value(), true);
 }
 
 TEST(json_array, end_with_comma)
@@ -62,7 +62,7 @@ TEST(object_type_detect, space)
   auto val = parse_string(jstr);
 
   EXPECT_TRUE(val->is_array());
-  EXPECT_EQ((*val)[0].boolean_value(), true);
+  EXPECT_EQ((*val)[0].bool_value(), true);
   EXPECT_EQ((*val)[1].int_value(), 123);
   EXPECT_EQ((*val)[2].double_value(), -1.0);
   EXPECT_EQ((*val)[3].string_value(), "abc");

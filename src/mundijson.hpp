@@ -113,7 +113,7 @@ public:
     throw not_supported();
   }
 
-  virtual bool boolean_value() const noexcept
+  virtual bool bool_value() const noexcept
   {
     return false;
   }
@@ -563,7 +563,7 @@ public:
     return *this;
   }
 
-  bool boolean_value() const noexcept override
+  bool bool_value() const noexcept override
   {
     auto str = buffer->substr(pos, len);
     if (0 == str.compare("true")) {
@@ -715,7 +715,7 @@ private:
         return value_type::number;
       } else if (c == '-') {
         char next = peek_next_or_throw(1);
-        if (isdigit(next)) {
+        if (GSL_LIKELY(isdigit(next))) {
           return value_type::number;
         } else {
           throw unknown_input();
