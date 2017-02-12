@@ -163,6 +163,16 @@ public:
     return false;
   }
 
+  virtual size_t size() const noexcept
+  {
+    return 0;
+  }
+
+  virtual const json_value& at(size_t n) const
+  {
+    throw not_supported();
+  }
+
   bool is_object() const noexcept
   {
     return type() == value_type::object;
@@ -351,6 +361,16 @@ public:
     return cnt;
   }
 
+  size_t size() const noexcept override
+  {
+    return data.size();
+  }
+
+  const json_value& at(size_t n) const override
+  {
+    return data.at(n);
+  }
+
 protected:
   value_type type() const noexcept override
   {
@@ -445,6 +465,11 @@ public:
 
     cnt.push_back('}');
     return cnt;
+  }
+
+  size_t size() const noexcept override
+  {
+    return data.size();
   }
 
 protected:
