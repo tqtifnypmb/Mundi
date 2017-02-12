@@ -58,3 +58,11 @@ TEST(object_type_detect, space)
   EXPECT_TRUE((*val)["key3"].is_object());
   EXPECT_EQ((*val)["key3"]["key4"].boolean_value(), false);
 }
+
+TEST(object_type_detect, space_2)
+{
+  std::string jstr { "\n\n\n{   \n\n }\n\n" };
+  auto val = parse_string(jstr);
+
+  EXPECT_TRUE(val->is_object());
+}

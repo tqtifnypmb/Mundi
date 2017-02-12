@@ -165,22 +165,20 @@ std::unique_ptr<json_value> parse_cstring(const char* cstr, unsigned int len);
 
 MUDI_NS_END
 
-// string
-
 MUDI_N_NS_BEGIN
 
 typedef std::shared_ptr<std::string> buffer_ptr;
 
-class json_string: public json_value
+class json_base_value: public json_value
 {
 public:
-  json_string(unsigned int pos, unsigned int len, buffer_ptr buf): pos{ pos }, len{ len }, buffer{ buf }
+  json_base_value(unsigned int pos, unsigned int len, buffer_ptr buf): pos{ pos }, len{ len }, buffer{ buf }
   {}
 
-  json_string(const json_string& rhs): pos{ rhs.pos }, len{ rhs.len }, buffer{ rhs.buffer }
+  json_base_value(const json_base_value& rhs): pos{ rhs.pos }, len{ rhs.len }, buffer{ rhs.buffer }
   {}
 
-  json_string& operator=(const json_string& rhs)
+  json_base_value& operator=(const json_base_value& rhs)
   {
     if (&rhs == this) {
       return *this;
@@ -191,17 +189,57 @@ public:
     return *this;
   }
 
-  json_string(json_string&& rhs): pos{ rhs.pos }, len{ rhs.len }
+  json_base_value(json_base_value&& rhs): pos{ rhs.pos }, len{ rhs.len }
   {
     buffer = std::move(rhs.buffer);
   }
 
-  json_string& operator=(json_string&& rhs)
+  json_base_value& operator=(json_base_value&& rhs)
   {
     pos = rhs.pos;
     len = rhs.len;
     buffer = std::move(rhs.buffer);
 
+    return *this;
+  }
+
+protected:
+  unsigned int pos;
+  unsigned int len;
+  buffer_ptr buffer;
+};
+
+MUDI_N_NS_END
+
+// string
+
+MUDI_N_NS_BEGIN
+
+class json_string: public json_base_value
+{
+public:
+  json_string(unsigned int pos, unsigned int len, buffer_ptr buf): json_base_value{pos, len, buf}
+  {}
+
+  json_string(const json_string& rhs): json_base_value{rhs}
+  {}
+
+  json_string& operator=(const json_string& rhs)
+  {
+    if (&rhs == this) {
+      return *this;
+    }
+
+    json_base_value::operator=(rhs);
+    return *this;
+  }
+
+  json_string(json_string&& rhs): json_base_value{rhs}
+  {}
+
+  json_string& operator=(json_string&& rhs)
+  {
+    json_base_value::operator=(rhs);
     return *this;
   }
 
@@ -215,11 +253,6 @@ protected:
   {
     return value_type::string;
   }
-
-private:
-  unsigned int pos;
-  unsigned int len;
-  buffer_ptr buffer;
 };
 
 MUDI_N_NS_END
@@ -408,13 +441,13 @@ MUDI_N_NS_END
 
 MUDI_N_NS_BEGIN
 
-class json_number: public json_value
+class json_number: public json_base_value
 {
 public:
-  json_number(unsigned int pos, unsigned int len, buffer_ptr buf): pos{ pos }, len{ len }, buffer{ buf }
+  json_number(unsigned int pos, unsigned int len, buffer_ptr buf): json_base_value{pos, len, buf}
   {}
 
-  json_number(const json_number& rhs): pos{ rhs.pos }, len{ rhs.len }, buffer{ rhs.buffer }
+  json_number(const json_number& rhs): json_base_value{rhs}
   {}
 
   ~json_number() = default;
@@ -425,24 +458,17 @@ public:
       return *this;
     }
 
-    pos = rhs.pos;
-    len = rhs.len;
-    buffer = rhs.buffer;
+    json_base_value::operator=(rhs);
 
     return *this;
   }
 
-  json_number(json_number&& rhs): pos{ rhs.pos }, len{ rhs.len }
-  {
-    buffer = std::move(rhs.buffer);
-  }
+  json_number(json_number&& rhs): json_base_value{rhs}
+  {}
 
   json_number& operator=(json_number&& rhs)
   {
-    pos = rhs.pos;
-    len = rhs.len;
-    buffer = std::move(rhs.buffer);
-
+    json_base_value::operator=(rhs);
     return *this;
   }
 
@@ -476,11 +502,6 @@ protected:
   {
     return value_type::number;
   }
-
-private:
-  unsigned int pos;
-  unsigned int len;
-  buffer_ptr buffer;
 };
 
 MUDI_N_NS_END
@@ -489,13 +510,13 @@ MUDI_N_NS_END
 
 MUDI_N_NS_BEGIN
 
-class json_boolean: public json_value
+class json_boolean: public json_base_value
 {
 public:
-  json_boolean(unsigned int pos, unsigned int len, buffer_ptr buf): pos{ pos }, len{ len }, buffer{ buf }
+  json_boolean(unsigned int pos, unsigned int len, buffer_ptr buf): json_base_value{pos, len, buf}
   {}
 
-  json_boolean(const json_boolean& rhs): pos{ rhs.pos }, len{ rhs.len }, buffer{ rhs.buffer }
+  json_boolean(const json_boolean& rhs): json_base_value{rhs}
   {}
 
   ~json_boolean() = default;
@@ -506,24 +527,17 @@ public:
       return *this;
     }
 
-    pos = rhs.pos;
-    len = rhs.len;
-    buffer = rhs.buffer;
+    json_base_value::operator=(rhs);
 
     return *this;
   }
 
-  json_boolean(json_boolean&& rhs): pos{ rhs.pos }, len{ rhs.len }
-  {
-    buffer = std::move(rhs.buffer);
-  }
+  json_boolean(json_boolean&& rhs): json_base_value{rhs}
+  {}
 
   json_boolean& operator=(json_boolean&& rhs)
   {
-    pos = rhs.pos;
-    len = rhs.len;
-    buffer = std::move(rhs.buffer);
-
+    json_base_value::operator=(rhs);
     return *this;
   }
 
@@ -547,11 +561,6 @@ protected:
   {
     return value_type::boolean;
   }
-
-private:
-  unsigned int pos;
-  unsigned int len;
-  buffer_ptr buffer;
 };
 
 MUDI_N_NS_END
