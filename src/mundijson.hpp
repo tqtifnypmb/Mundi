@@ -8,9 +8,8 @@
 #include <algorithm>  // max
 #include <sstream>  // ostringstream
 #include <utility>  // make_pair
-#include <memory>   // share_ptr unique_ptr
+#include <memory>   // share_ptr
 #include <cctype>
-#include <cassert>  // assert
 #include <exception>
 
 #define MUDI_NS_BEGIN namespace mundi {
@@ -29,6 +28,27 @@ enum class value_type
   boolean,
   null,
 };
+
+MUDI_N_NS_END
+
+// Expects & Ensures
+
+MUDI_N_NS_BEGIN
+
+// Codes source from https://github.com/Microsoft/GSL
+
+#if defined(__clang__) || defined(__GNUC__)
+#define GSL_LIKELY(x) __builtin_expect (!!(x), 1)
+#define GSL_UNLIKELY(x) __builtin_expect (!!(x), 0)
+#else
+#define GSL_LIKELY(x) (x)
+#define GSL_UNLIKELY(x) (x)
+#endif
+
+#define Expects(cond)                                                                              \
+    if (GSL_UNLIKELY(!(cond))) std::terminate();
+#define Ensures(cond)                                                                              \
+    if (GSL_UNLIKELY(!(cond))) std::terminate();
 
 MUDI_N_NS_END
 
@@ -164,6 +184,8 @@ std::unique_ptr<json_value> parse_string(const std::string& str);
 std::unique_ptr<json_value> parse_cstring(const char* cstr, unsigned int len);
 
 MUDI_NS_END
+
+// base value
 
 MUDI_N_NS_BEGIN
 
@@ -569,11 +591,6 @@ MUDI_N_NS_END
 
 MUDI_N_NS_BEGIN
 
-void Ensures(bool pred)
-{
-  assert(pred);
-}
-
 class string_gap
 {
 public:
@@ -616,7 +633,7 @@ public:
       delta += rite->second;
     }
 
-    Ensures(delta == (origin_length - buffer->length()));
+    Expects(delta == (origin_length - buffer->length()));
     gaps.clear();
 
     return delta;
@@ -821,7 +838,7 @@ private:
     } else if (c1 == 'f' && c2 == 'a' && c3 =='l' && c4 == 's') {
       char c5 = get_next_or_throw();
       c5 = tolower(c5);
-      if (c5 == 'e') {
+      if (GSL_LIKELY(c5 == 'e')) {
         buffer->at(begin) = c1;
         buffer->at(begin + 1) = c2;
         buffer->at(begin + 2) = c3;
@@ -912,7 +929,7 @@ std::unique_ptr<json_value> json_parser::parse_string()
     }
   }
 
-  Ensures(buffer->at(cursor - 1) == '\"');  // postcondition
+  Expects(buffer->at(cursor - 1) == '\"');  // postcondition
 
   string_gap::gap_delta delta = gaps.remove_gaps(buffer);
   cursor -= delta;
@@ -941,7 +958,7 @@ std::unique_ptr<json_value> json_parser::parse_array()
     if (c == ',') {
       unsigned int pos = 0;
       char next = peek_next_nonspace_or_throw(&pos);
-      if (next == ']') {
+      if (GSL_UNLIKELY(next == ']')) {    // ,] is unlikely, I guess
         cursor = pos;
         return std::unique_ptr<json_value>(array.release());
       }
@@ -968,7 +985,7 @@ std::unique_ptr<json_value> json_parser::parse_object()
     Ensures(key->is_string());
 
     char c = get_next_nonspace_or_throw();
-    if (c == ':') {
+    if (GSL_LIKELY(c == ':')) {
       auto val = parse();
       obj->push_back(key->string_value(), val.release());
     }
@@ -977,7 +994,7 @@ std::unique_ptr<json_value> json_parser::parse_object()
     if (c == ',') {
       unsigned int pos = 0;
       c = peek_next_nonspace_or_throw(&pos);
-      if (c == '}') {
+      if (GSL_UNLIKELY(c == '}')) {   // ,} is unlikely, I guess
         cursor = pos;
         return std::unique_ptr<json_value>(obj.release());
       }
@@ -993,7 +1010,7 @@ MUDI_NS_BEGIN
 
 std::unique_ptr<json_value> parse_string(const std::string& str)
 {
-  if (str.empty()) {
+  if (GSL_UNLIKELY(str.empty())) {
     return std::make_unique<json_value>();
   }
   json_parser p{ str };
@@ -1002,7 +1019,7 @@ std::unique_ptr<json_value> parse_string(const std::string& str)
 
 std::unique_ptr<json_value> parse_cstring(const char* cstr, unsigned int len)
 {
-  if (len == 0) {
+  if (GSL_UNLIKELY(len == 0)) {
     return std::make_unique<json_value>();
   }
   json_parser p{cstr, len};
